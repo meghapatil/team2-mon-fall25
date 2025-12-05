@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { type Task, type TaskDependency } from "../../types";
-import { fetchWorkspaceMembers, type WorkspaceMemberExtended } from "../../lib/api";
+// import { fetchWorkspaceMembers, type WorkspaceMemberExtended } from "../../lib/api";
 import DependencySelector from "../tasks/DependencySelector";
+import { getWorkspaceMembers } from "../tasks/TaskApi";
+import { useAccessToken } from "../../auth/useAccessToken";
 
 interface Props {
   onClose: () => void;
@@ -17,19 +19,24 @@ const TaskModal: React.FC<Props> = ({ onClose, onCreate, availableTasks = [] }) 
   const [tags, setTags] = useState<string>("");
   const [assigneeId, setAssigneeId] = useState<number | null>(null);
   const [selectedDependencies, setSelectedDependencies] = useState<TaskDependency[]>([]);
+  const token = useAccessToken(); 
 
-  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberExtended[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<Array<{
+    id: number;
+    email: string;
+    full_name: string;
+    first_name?: string;
+    last_name?: string;
+  }>>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
 
   // Fetch workspace members on mount
   useEffect(() => {
     const loadMembers = async () => {
+      if (!token) return; // Wait for token
       try {
-        const workspaceId = localStorage.getItem("cd.workspace");
-        if (workspaceId) {
-          const members = await fetchWorkspaceMembers(workspaceId);
-          setWorkspaceMembers(members);
-        }
+        const members = await getWorkspaceMembers(token);
+        setWorkspaceMembers(members);
       } catch (error) {
         console.error("Failed to load workspace members:", error);
       } finally {
@@ -37,7 +44,7 @@ const TaskModal: React.FC<Props> = ({ onClose, onCreate, availableTasks = [] }) 
       }
     };
     loadMembers();
-  }, []);
+  }, [token]); // Add token as dependency
 
   const handleSubmit = () => {
     if (!name.trim()) {
@@ -58,8 +65,13 @@ const TaskModal: React.FC<Props> = ({ onClose, onCreate, availableTasks = [] }) 
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       status: "todo",
       assignedToId: assigneeId || undefined,
-      assignedTo: selectedMember ? selectedMember.full_name || selectedMember.email : undefined,
+      assignedTo: selectedMember 
+        ? (selectedMember.first_name && selectedMember.last_name 
+            ? `${selectedMember.first_name} ${selectedMember.last_name}` 
+            : selectedMember.full_name || selectedMember.email)
+        : undefined,
       dependencies: selectedDependencies.length > 0 ? selectedDependencies : undefined,
+      dependencyIds: selectedDependencies.map(d => d.id),
       canComplete: incompleteDeps === 0,
       incompleteDependencyCount: incompleteDeps,
     };
@@ -197,7 +209,9 @@ const TaskModal: React.FC<Props> = ({ onClose, onCreate, availableTasks = [] }) 
               <option value="">Unassigned</option>
               {workspaceMembers.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.full_name || member.email}
+                  {member.first_name && member.last_name 
+                    ? `${member.first_name} ${member.last_name}` 
+                    : member.full_name || member.email}
                 </option>
               ))}
             </select>
@@ -217,7 +231,12 @@ const TaskModal: React.FC<Props> = ({ onClose, onCreate, availableTasks = [] }) 
               if (task) {
                 setSelectedDependencies([
                   ...selectedDependencies,
-                  { id: task.id, title: task.name, status: task.status }
+                  { 
+                    id: task.id, 
+                    title: task.name, 
+                    status: task.status,
+                    priority: task.priority 
+                  }
                 ]);
               }
             }}

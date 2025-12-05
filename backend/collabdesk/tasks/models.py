@@ -47,6 +47,15 @@ class Task(models.Model):
     tags = models.JSONField(blank=True, default=list)
     archived = models.BooleanField(default=False)
 
+    # Dependencies - tasks that must be completed before this one
+    dependencies = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='dependent_tasks',
+        blank=True,
+        help_text="Tasks that must be completed before this task"
+    )
+
     class Meta:
         ordering = ["-priority", "due_date", "-created_at"]
         indexes = [
@@ -57,3 +66,9 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.get_status_display()})"
+
+    @property
+    def can_complete(self):
+        """Check if all dependencies are completed"""
+        return not self.dependencies.exclude(status=self.Status.DONE).exists()
+    
